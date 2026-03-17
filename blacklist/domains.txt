@@ -1,0 +1,28 @@
+# P4 Firewall - Malicious Domain Blacklist
+# ==========================================
+# Format: one domain per line (3-label domains)
+# Label lengths are used as matching keys in the domain_filter table.
+
+# --- Malware C&C ---
+malware.evil.com
+botnet.command.com
+trojan.update.org
+exploit.attack.net
+backdoor.hack.com
+rootkit.shadow.org
+
+# --- Phishing ---
+phish.bad.com
+secure.fraud.net
+verify.scam.org
+account.theft.com
+
+# --- Cryptomining ---
+coinhive.crypto.com
+webminer.profit.net
+cpuminer.steal.org
+
+# --- Adware/Tracking ---
+tracking.adware.com
+hijacker.popup.net
+redirect.inject.org
