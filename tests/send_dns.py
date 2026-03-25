@@ -70,7 +70,7 @@ Examples:
     parser.add_argument('--domain', '-d', required=True, help='Domain name')
     parser.add_argument('--dst', default='10.0.3.3', help='Destination IP')
     parser.add_argument('--src', default='10.0.1.1', help='Source IP')
-    parser.add_argument('--iface', '-i', default='eth0', help='Interface')
+    parser.add_argument('--iface', '-i', default='h1-eth0', help='Interface')
     parser.add_argument('--count', '-c', type=int, default=5, help='Packet count')
     parser.add_argument('--delay', type=float, default=0.5, help='Delay (s)')
     parser.add_argument('--response', '-r', action='store_true', help='Send response')

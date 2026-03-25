@@ -141,9 +141,6 @@ struct metadata {
     /* [ENHANCEMENT] DNS DPI fields */
     bit<1>  is_dns;
     bit<1>  is_dns_response;
-    bit<32> label1_hash;
-    bit<32> label2_hash;
-    bit<32> label3_hash;
     bit<2>  dns_action;       // 0=allow, 1=block, 2=log
 }
 
@@ -391,20 +388,6 @@ control MyIngress(inout headers hdr,
     action dns_allow() { meta.dns_action = 0; }
     action dns_log()   { meta.dns_action = 2; }
 
-    /* [ENHANCEMENT] CRC32 hashes for label lengths */
-    action compute_label1_hash() {
-        hash(meta.label1_hash, HashAlgorithm.crc32, (bit<32>)0,
-             { hdr.label1_len.len }, (bit<32>)0xFFFFFFFF);
-    }
-    action compute_label2_hash() {
-        hash(meta.label2_hash, HashAlgorithm.crc32, (bit<32>)0,
-             { hdr.label2_len.len }, (bit<32>)0xFFFFFFFF);
-    }
-    action compute_label3_hash() {
-        hash(meta.label3_hash, HashAlgorithm.crc32, (bit<32>)0,
-             { hdr.label3_len.len }, (bit<32>)0xFFFFFFFF);
-    }
-
     /* ======================== TABLES ======================== */
 
     /* [ORIGINAL] */
@@ -489,18 +472,7 @@ control MyIngress(inout headers hdr,
                 dns_inspect_counter.read(dns_cnt, 0);
                 dns_inspect_counter.write(0, dns_cnt + 1);
 
-                // Compute hashes of parsed label lengths
-                if (hdr.label1_len.isValid() && hdr.label1_len.len > 0) {
-                    compute_label1_hash();
-                }
-                if (hdr.label2_len.isValid() && hdr.label2_len.len > 0) {
-                    compute_label2_hash();
-                }
-                if (hdr.label3_len.isValid() && hdr.label3_len.len > 0) {
-                    compute_label3_hash();
-                }
-
-                // Match domain against blacklist
+                // Match domain against blacklist (based on label lengths)
                 if (hdr.label1_len.isValid() && hdr.label2_len.isValid()
                     && hdr.label3_len.isValid()) {
                     domain_filter.apply();

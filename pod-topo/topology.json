@@ -4,32 +4,32 @@
             "ip": "10.0.1.1/24",
             "mac": "08:00:00:00:01:11",
             "commands": [
-                "route add default gw 10.0.1.10 dev eth0",
-                "arp -i eth0 -s 10.0.1.10 08:00:00:00:01:00"
+                "route add default gw 10.0.1.10 dev h1-eth0",
+                "arp -i h1-eth0 -s 10.0.1.10 08:00:00:00:01:00"
             ]
         },
         "h2": {
             "ip": "10.0.2.2/24",
             "mac": "08:00:00:00:02:22",
             "commands": [
-                "route add default gw 10.0.2.20 dev eth0",
-                "arp -i eth0 -s 10.0.2.20 08:00:00:00:02:00"
+                "route add default gw 10.0.2.20 dev h2-eth0",
+                "arp -i h2-eth0 -s 10.0.2.20 08:00:00:00:02:00"
             ]
         },
         "h3": {
             "ip": "10.0.3.3/24",
             "mac": "08:00:00:00:03:33",
             "commands": [
-                "route add default gw 10.0.3.30 dev eth0",
-                "arp -i eth0 -s 10.0.3.30 08:00:00:00:03:00"
+                "route add default gw 10.0.3.30 dev h3-eth0",
+                "arp -i h3-eth0 -s 10.0.3.30 08:00:00:00:03:00"
             ]
         },
         "h4": {
             "ip": "10.0.4.4/24",
             "mac": "08:00:00:00:04:44",
             "commands": [
-                "route add default gw 10.0.4.40 dev eth0",
-                "arp -i eth0 -s 10.0.4.40 08:00:00:00:04:00"
+                "route add default gw 10.0.4.40 dev h4-eth0",
+                "arp -i h4-eth0 -s 10.0.4.40 08:00:00:00:04:00"
             ]
         }
     },

@@ -16,7 +16,7 @@ import sys
 
 def main():
     parser = argparse.ArgumentParser(description='P4 Firewall - DNS Receiver')
-    parser.add_argument('--iface', '-i', default='eth0', help='Interface')
+    parser.add_argument('--iface', '-i', default='h3-eth0', help='Interface')
     parser.add_argument('--timeout', '-t', type=int, default=120, help='Timeout (s)')
     args = parser.parse_args()
 
