@@ -348,3 +348,94 @@ The layers are applied in sequence inside `MyIngress.apply()` (lines 453-560). I
 3. **BMv2 target**: The paper targets Tofino for production performance. We target BMv2 for accessibility — anyone can test the firewall without specialized hardware.
 
 4. **Label length matching**: While less precise than the paper's hash-based approach, label length matching clearly demonstrates the DPI concept and is easier to understand, configure, and debug.
+
+---
+
+## April 2026 Future-Work Implementation Progress (UPDATED)
+
+To align with the paper's Section VII (Conclusion and Future Work), the project now includes the following additional implementations:
+
+### ✅ COMPLETED
+
+#### 1. DNS water-torture mitigation (dataplane defense)
+- Added `dns_query_rate` register to track repeated DNS-query patterns per src IP + domain
+- Added threshold-based blocking (`DNS_WATER_TORTURE_THRESHOLD = 30`)
+- Added counter `dns_water_torture_counter` to measure attack mitigation
+- Implemented in `MyIngress.apply()` before `domain_filter` decision
+- **Status**: Fully functional - prevents DNS query floods from single source
+
+#### 2. Encrypted DNS (DoT/DoH) inference and policy enforcement
+- Added `encrypted_dns_endpoints` table for known encrypted DNS resolver IPs
+- Added DoT (TCP/853) and DoH-like (TCP/443) enforcement logic
+- Added counters `dot_block_counter` and `doh_block_counter`
+- Seeded runtime entries for known public resolver IPs in `pod-topo/s1-runtime.json`
+- **Status**: Fully functional - blocks encrypted DNS to blacklisted endpoints
+
+#### 3. Expanded DNS label support
+- Extended parser and headers from 3-label to 4-label extraction
+- Extended `domain_filter` match keys to include `hdr.label4_len.len`
+- Updated controller output format to support 3-label and 4-label domains
+- **Status**: Fully functional - covers domains up to 4 levels deep (e.g., `sub.malware.evil.com`)
+
+#### 4. **[NEW] DNS Answer Section Parsing (A/AAAA Record Extraction)**
+- Added parser states for DNS Resource Records (RRs) in answer section
+- Extracts TTL, RDLENGTH, and RDATA fields per RFC 1035
+- **A Record Support**: Parses IPv4 addresses (4 bytes) from RDATA
+- **IP Learning Enhancement**: When a blacklisted domain's DNS response is detected:
+  - **Prefers**: Extracted resolved IP from A record RDATA (true IP blocking)
+  - **Fallback**: DNS server source IP if no A record present (backward compatible)
+- Added metadata fields:
+  - `has_answer_a_record`: Flag indicating valid A record was parsed
+  - `learned_ip`: Extracted IPv4 address from answer section
+- Added headers:
+  - `dns_rr_fixed_t`: Type | Class | TTL | RDLENGTH fields
+  - `dns_a_record_t`: IPv4 address (4 bytes)
+- **Parser Flow**: After parsing query domain → parse answer RRs → extract 1st A record
+- **Apply Logic**:
+  ```
+  if (rr_a.isValid()) {
+      ip_to_block = rr_a.ipv4_addr;  // Use resolved IP from answer
+  } else {
+      ip_to_block = ipv4.srcAddr;    // Fallback to DNS server
+  }
+  ```
+- **Impact**: Enables blocking actual malicious servers instead of just DNS resolvers
+- **Test Files**:
+  - `tests/send_dns_response.py` - Crafts DNS responses with A record answers
+  - `tests/test_dns_answer_section.py` - Comprehensive test suite for answer section parsing
+- **Status**: ✅ IMPLEMENTED - Addresses research paper's Step 3 requirement
+
+### 🚧 NOT YET IMPLEMENTED (Future Enhancements)
+
+1. **Packet Recirculation for >4 Labels**
+   - For domains with 5+ labels (e.g., `sub1.sub2.malware.evil.com`)
+   - Would require: recirculation loop, metadata preservation, loop prevention
+   - **Impact**: Currently supports 4 labels; 5+ labels would need recirculation
+   - **Alternative**: Extend to 6 labels without recirculation (future PR)
+   - **Effort**: High - requires careful state management across pipeline passes
+
+2. **CNAME Record Chaining**
+   - Parse and follow CNAME records that point to other domains
+   - Extract final A record from CNAME chain
+   - **Impact**: Defenders against domain alias obfuscation
+   - **Effort**: Medium - requires additional answer RR parsing states
+
+3. **AAAA Record Support (IPv6)**
+   - Extend A record parsing to also handle AAAA records (16 bytes)
+   - Add dynamic IPv6 blocking to `blocked_ips` register
+   - **Impact**: IPv6 firewall capabilities
+   - **Effort**: Low - minor parser extension
+
+4. **ASIC-specific Optimization**
+   - Tofino hardware deployment with resource-aware design
+   - Eliminate BMv2 software simulation overhead
+   - **Impact**: Line-rate performance metrics
+   - **Effort**: High - requires Tofino access
+
+5. **Large-scale Benchmarking**
+   - Compare P4DDPI implementation vs. pfsense (as in paper)
+   - Measure throughput, latency, firewall drop rates under load
+   - **Impact**: Validates research claims
+   - **Effort**: High - requires testbed + traffic generation
+
+

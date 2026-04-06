@@ -30,10 +30,18 @@ const bit<16> TYPE_IPV4 = 0x800;
 const bit<8>  TYPE_TCP  = 6;
 const bit<8>  TYPE_UDP  = 17;
 const bit<16> DNS_PORT  = 53;
+const bit<16> DOT_PORT  = 853;
+const bit<16> HTTPS_PORT = 443;
+const bit<16> DNS_WATER_TORTURE_THRESHOLD = 30;
 
+/* Resource sizing:
+ * - Bloom filters track TCP connection state.
+ * - blocked_ips tracks dynamically learned malicious IPs.
+ */
 #define BLOOM_FILTER_ENTRIES 4096
 #define BLOOM_FILTER_BIT_WIDTH 1
 #define BLOCKED_IP_ENTRIES 4096
+#define DNS_RATE_ENTRIES 8192
 
 /*************************************************************************
 *********************** H E A D E R S  ***********************************
@@ -141,7 +149,13 @@ struct metadata {
     /* [ENHANCEMENT] DNS DPI fields */
     bit<1>  is_dns;
     bit<1>  is_dns_response;
+    bit<1>  enc_dns_match;
+    bit<1>  water_torture_block;
     bit<2>  dns_action;       // 0=allow, 1=block, 2=log
+
+    /* [FUTURE WORK] DNS Answer Section Parsing */
+    bit<1>  has_answer_a_record;  // Flag: found an A record in answer section
+    bit<32> learned_ip;           // Extracted IPv4 from A record RDATA
 }
 
 struct headers {
@@ -177,8 +191,40 @@ struct headers {
     label_10_t l3_v10; label_11_t l3_v11; label_12_t l3_v12;
     label_13_t l3_v13; label_14_t l3_v14; label_15_t l3_v15;
 
+    // Label 4 (e.g., "uk" in www.evil.co.uk)
+    dns_label_len_t label4_len;
+    label_1_t  l4_v1;  label_2_t  l4_v2;  label_3_t  l4_v3;
+    label_4_t  l4_v4;  label_5_t  l4_v5;  label_6_t  l4_v6;
+    label_7_t  l4_v7;  label_8_t  l4_v8;  label_9_t  l4_v9;
+    label_10_t l4_v10; label_11_t l4_v11; label_12_t l4_v12;
+    label_13_t l4_v13; label_14_t l4_v14; label_15_t l4_v15;
+
     // End of domain name (root label 0x00)
     dns_label_len_t label_end;
+
+    // [FUTURE WORK] DNS Answer Section (Resource Records)
+    // RR format: Name (compressed) | Type (2) | Class (2) | TTL (4) | RDLENGTH (2) | RDATA (var)
+    dns_label_len_t rr_name_len;     // First label length of RR name (after compression)
+    dns_label_len_t rr_name_len2;    // Second label length if needed
+    header dns_rr_fixed_t {
+        bit<16> type;                // 1=A, 28=AAAA, 5=CNAME, etc.
+        bit<16> rr_class;            // Usually 1 (IN)
+        bit<32> ttl;
+        bit<16> rdlength;
+    }
+    dns_rr_fixed_t rr_fixed;
+
+    // A record answer (IPv4 address - 4 bytes)
+    header dns_a_record_t {
+        bit<32> ipv4_addr;
+    }
+    dns_a_record_t rr_a;
+
+    // [EXTENSION] AAAA record answer (IPv6 address - 16 bytes)
+    header dns_aaaa_record_t {
+        bit<128> ipv6_addr;
+    }
+    dns_aaaa_record_t rr_aaaa;
 }
 
 /*************************************************************************
@@ -220,6 +266,7 @@ parser MyParser(packet_in packet,
 
     state parse_udp {
         packet.extract(hdr.udp);
+        // Only enter DNS parser when either endpoint is port 53.
         transition select(hdr.udp.dstPort, hdr.udp.srcPort) {
             (DNS_PORT, _): parse_dns;
             (_, DNS_PORT): parse_dns;
@@ -229,6 +276,7 @@ parser MyParser(packet_in packet,
 
     state parse_dns {
         packet.extract(hdr.dns);
+        // Cache DNS context into metadata so ingress can make policy decisions.
         meta.is_dns = 1;
         meta.is_dns_response = hdr.dns.qr;
         transition parse_label1_len;
@@ -299,25 +347,92 @@ parser MyParser(packet_in packet,
             default: accept;
         }
     }
-    state l3_1  { packet.extract(hdr.l3_v1);  transition parse_label_end; }
-    state l3_2  { packet.extract(hdr.l3_v2);  transition parse_label_end; }
-    state l3_3  { packet.extract(hdr.l3_v3);  transition parse_label_end; }
-    state l3_4  { packet.extract(hdr.l3_v4);  transition parse_label_end; }
-    state l3_5  { packet.extract(hdr.l3_v5);  transition parse_label_end; }
-    state l3_6  { packet.extract(hdr.l3_v6);  transition parse_label_end; }
-    state l3_7  { packet.extract(hdr.l3_v7);  transition parse_label_end; }
-    state l3_8  { packet.extract(hdr.l3_v8);  transition parse_label_end; }
-    state l3_9  { packet.extract(hdr.l3_v9);  transition parse_label_end; }
-    state l3_10 { packet.extract(hdr.l3_v10); transition parse_label_end; }
-    state l3_11 { packet.extract(hdr.l3_v11); transition parse_label_end; }
-    state l3_12 { packet.extract(hdr.l3_v12); transition parse_label_end; }
-    state l3_13 { packet.extract(hdr.l3_v13); transition parse_label_end; }
-    state l3_14 { packet.extract(hdr.l3_v14); transition parse_label_end; }
-    state l3_15 { packet.extract(hdr.l3_v15); transition parse_label_end; }
+    state l3_1  { packet.extract(hdr.l3_v1);  transition parse_label4_len; }
+    state l3_2  { packet.extract(hdr.l3_v2);  transition parse_label4_len; }
+    state l3_3  { packet.extract(hdr.l3_v3);  transition parse_label4_len; }
+    state l3_4  { packet.extract(hdr.l3_v4);  transition parse_label4_len; }
+    state l3_5  { packet.extract(hdr.l3_v5);  transition parse_label4_len; }
+    state l3_6  { packet.extract(hdr.l3_v6);  transition parse_label4_len; }
+    state l3_7  { packet.extract(hdr.l3_v7);  transition parse_label4_len; }
+    state l3_8  { packet.extract(hdr.l3_v8);  transition parse_label4_len; }
+    state l3_9  { packet.extract(hdr.l3_v9);  transition parse_label4_len; }
+    state l3_10 { packet.extract(hdr.l3_v10); transition parse_label4_len; }
+    state l3_11 { packet.extract(hdr.l3_v11); transition parse_label4_len; }
+    state l3_12 { packet.extract(hdr.l3_v12); transition parse_label4_len; }
+    state l3_13 { packet.extract(hdr.l3_v13); transition parse_label4_len; }
+    state l3_14 { packet.extract(hdr.l3_v14); transition parse_label4_len; }
+    state l3_15 { packet.extract(hdr.l3_v15); transition parse_label4_len; }
+
+    // --- Label 4 ---
+    state parse_label4_len {
+        packet.extract(hdr.label4_len);
+        transition select(hdr.label4_len.len) {
+            0:  accept;
+            1:  l4_1;  2:  l4_2;  3:  l4_3;  4:  l4_4;  5:  l4_5;
+            6:  l4_6;  7:  l4_7;  8:  l4_8;  9:  l4_9;  10: l4_10;
+            11: l4_11; 12: l4_12; 13: l4_13; 14: l4_14; 15: l4_15;
+            default: accept;
+        }
+    }
+    state l4_1  { packet.extract(hdr.l4_v1);  transition parse_label_end; }
+    state l4_2  { packet.extract(hdr.l4_v2);  transition parse_label_end; }
+    state l4_3  { packet.extract(hdr.l4_v3);  transition parse_label_end; }
+    state l4_4  { packet.extract(hdr.l4_v4);  transition parse_label_end; }
+    state l4_5  { packet.extract(hdr.l4_v5);  transition parse_label_end; }
+    state l4_6  { packet.extract(hdr.l4_v6);  transition parse_label_end; }
+    state l4_7  { packet.extract(hdr.l4_v7);  transition parse_label_end; }
+    state l4_8  { packet.extract(hdr.l4_v8);  transition parse_label_end; }
+    state l4_9  { packet.extract(hdr.l4_v9);  transition parse_label_end; }
+    state l4_10 { packet.extract(hdr.l4_v10); transition parse_label_end; }
+    state l4_11 { packet.extract(hdr.l4_v11); transition parse_label_end; }
+    state l4_12 { packet.extract(hdr.l4_v12); transition parse_label_end; }
+    state l4_13 { packet.extract(hdr.l4_v13); transition parse_label_end; }
+    state l4_14 { packet.extract(hdr.l4_v14); transition parse_label_end; }
+    state l4_15 { packet.extract(hdr.l4_v15); transition parse_label_end; }
 
     // --- Root label (0x00) ---
     state parse_label_end {
         packet.extract(hdr.label_end);
+        // [FUTURE WORK] For DNS responses, continue to answer section
+        transition parse_answer_section;
+    }
+
+    // =================================================================
+    // [FUTURE WORK] DNS ANSWER SECTION PARSING (Resource Records)
+    // =================================================================
+    // DNS answer section contains RRs: Name | Type | Class | TTL | RDLEN | RDATA
+    // We try to parse the first answer RR to extract IPv4 (A record).
+    // Name in answer section is often a DNS pointer (0xC0XX) to earlier label.
+    // For simplicity, we extract a 1-byte length and proceed.
+
+    state parse_answer_section {
+        // Check if answer count > 0. If so, parse first answer RR.
+        // Since P4 parser can't conditionally check qdcount/ancount,
+        // we speculatively extract RR name label length and type.
+        packet.extract(hdr.rr_name_len);
+        transition parse_rr_fixed;
+    }
+
+    // Parse RR header: Type (2) | Class (2) | TTL (4) | RDLENGTH (2)
+    state parse_rr_fixed {
+        packet.extract(hdr.rr_fixed);
+        // Type 1 = A record (IPv4). Type 28 = AAAA record (IPv6).
+        transition select(hdr.rr_fixed.type, hdr.rr_fixed.rdlength) {
+            (16w1, 16w4):   parse_rr_a_record;     // A record with 4 bytes
+            (16w28, 16w16): parse_rr_aaaa_record;  // AAAA record with 16 bytes
+            default: accept;                        // Other types or different length
+        }
+    }
+
+    // Extract IPv4 address from A record RDATA
+    state parse_rr_a_record {
+        packet.extract(hdr.rr_a);
+        transition accept;
+    }
+
+    // [EXTENSION] Extract IPv6 address from AAAA record RDATA
+    state parse_rr_aaaa_record {
+        packet.extract(hdr.rr_aaaa);
         transition accept;
     }
 }
@@ -348,9 +463,13 @@ control MyIngress(inout headers hdr,
 
     /* --- [ENHANCEMENT] DNS DPI Registers --- */
     register<bit<1>>(BLOCKED_IP_ENTRIES) blocked_ips;
+    register<bit<16>>(DNS_RATE_ENTRIES) dns_query_rate;
     register<bit<32>>(1) dns_inspect_counter;
     register<bit<32>>(1) dns_block_counter;
+    register<bit<32>>(1) dns_water_torture_counter;
     register<bit<32>>(1) ip_block_counter;
+    register<bit<32>>(1) dot_block_counter;
+    register<bit<32>>(1) doh_block_counter;
 
     /* ======================== ACTIONS ======================== */
 
@@ -387,6 +506,7 @@ control MyIngress(inout headers hdr,
     action dns_block() { meta.dns_action = 1; }
     action dns_allow() { meta.dns_action = 0; }
     action dns_log()   { meta.dns_action = 2; }
+    action mark_enc_dns_endpoint() { meta.enc_dns_match = 1; }
 
     /* ======================== TABLES ======================== */
 
@@ -404,21 +524,32 @@ control MyIngress(inout headers hdr,
             standard_metadata.ingress_port: exact;
             standard_metadata.egress_spec: exact;
         }
+        // Control plane maps (ingress, egress) to traffic direction:
+        // dir=0 internal->external, dir=1 external->internal.
         actions = { set_direction; NoAction; }
         size = 1024;
         default_action = NoAction();
     }
 
     /* [ENHANCEMENT] DNS domain blacklist table
-     * Matches on the 3 label lengths extracted by the DPI parser.
+     * Matches on up to 4 label lengths extracted by the DPI parser.
      * Populated by control plane from blacklist/domains.txt */
     table domain_filter {
         key = {
             hdr.label1_len.len: exact;
             hdr.label2_len.len: exact;
             hdr.label3_len.len: exact;
+            hdr.label4_len.len: exact;
         }
         actions = { dns_block; dns_allow; dns_log; NoAction; }
+        size = 4096;
+        default_action = NoAction();
+    }
+
+    /* [FUTURE WORK] Known encrypted DNS endpoints for DoT/DoH policy. */
+    table encrypted_dns_endpoints {
+        key = { hdr.ipv4.dstAddr: exact; }
+        actions = { mark_enc_dns_endpoint; NoAction; }
         size = 4096;
         default_action = NoAction();
     }
@@ -435,6 +566,12 @@ control MyIngress(inout headers hdr,
 
     apply {
         if (hdr.ipv4.isValid()){
+            // Initialize metadata controls each packet to avoid stale values.
+            meta.dns_action = 0;
+            meta.enc_dns_match = 0;
+            meta.water_torture_block = 0;
+
+            // Route first so egress port is known for direction-aware policy.
             ipv4_lpm.apply();
 
             // =============================================================
@@ -442,6 +579,7 @@ control MyIngress(inout headers hdr,
             // Block traffic to known malicious IPs (table + register).
             // =============================================================
             if (ip_blacklist.apply().hit) {
+                // drop() action is executed by the table entry itself.
                 bit<32> ip_cnt;
                 ip_block_counter.read(ip_cnt, 0);
                 ip_block_counter.write(0, ip_cnt + 1);
@@ -458,12 +596,40 @@ control MyIngress(inout headers hdr,
                 bit<32> ip_cnt2;
                 ip_block_counter.read(ip_cnt2, 0);
                 ip_block_counter.write(0, ip_cnt2 + 1);
+                // Register-based block requires explicit drop action here.
                 drop();
                 return;
             }
 
             // =============================================================
-            // [ENHANCEMENT] STAGE 2: DNS Deep Packet Inspection
+            // [FUTURE WORK] STAGE 2: Encrypted DNS (DoT/DoH) Inference Guard
+            // If destination is a known encrypted DNS endpoint, block DoT/DoH.
+            // =============================================================
+            if (hdr.tcp.isValid()) {
+                if (hdr.tcp.dstPort == DOT_PORT || hdr.tcp.srcPort == DOT_PORT
+                    || hdr.tcp.dstPort == HTTPS_PORT || hdr.tcp.srcPort == HTTPS_PORT) {
+                    encrypted_dns_endpoints.apply();
+                    if (meta.enc_dns_match == 1) {
+                        if (hdr.tcp.dstPort == DOT_PORT || hdr.tcp.srcPort == DOT_PORT) {
+                            bit<32> dot_cnt;
+                            dot_block_counter.read(dot_cnt, 0);
+                            dot_block_counter.write(0, dot_cnt + 1);
+                            drop();
+                            return;
+                        }
+                        if (hdr.tcp.dstPort == HTTPS_PORT || hdr.tcp.srcPort == HTTPS_PORT) {
+                            bit<32> doh_cnt;
+                            doh_block_counter.read(doh_cnt, 0);
+                            doh_block_counter.write(0, doh_cnt + 1);
+                            drop();
+                            return;
+                        }
+                    }
+                }
+            }
+
+            // =============================================================
+            // [ENHANCEMENT] STAGE 3: DNS Deep Packet Inspection
             // Parse DNS domain name, match against blacklist.
             // =============================================================
             if (meta.is_dns == 1 && hdr.dns.isValid()) {
@@ -472,9 +638,36 @@ control MyIngress(inout headers hdr,
                 dns_inspect_counter.read(dns_cnt, 0);
                 dns_inspect_counter.write(0, dns_cnt + 1);
 
+                // Mitigate DNS water-torture style floods by rate-limiting
+                // repeated queries per src + domain-pattern hash bucket.
+                if (meta.is_dns_response == 0
+                    && hdr.label1_len.isValid() && hdr.label2_len.isValid()
+                    && hdr.label3_len.isValid() && hdr.label4_len.isValid()) {
+                    bit<32> wt_idx;
+                    hash(wt_idx, HashAlgorithm.crc32, (bit<32>)0,
+                         { hdr.ipv4.srcAddr,
+                           hdr.label1_len.len, hdr.label2_len.len,
+                           hdr.label3_len.len, hdr.label4_len.len },
+                         (bit<32>)DNS_RATE_ENTRIES);
+
+                    bit<16> wt_count;
+                    dns_query_rate.read(wt_count, wt_idx);
+                    if (wt_count >= DNS_WATER_TORTURE_THRESHOLD) {
+                        meta.water_torture_block = 1;
+                        drop();
+                        bit<32> wt_blk;
+                        dns_water_torture_counter.read(wt_blk, 0);
+                        dns_water_torture_counter.write(0, wt_blk + 1);
+                        return;
+                    }
+                    if (wt_count < 65535) {
+                        dns_query_rate.write(wt_idx, wt_count + 1);
+                    }
+                }
+
                 // Match domain against blacklist (based on label lengths)
                 if (hdr.label1_len.isValid() && hdr.label2_len.isValid()
-                    && hdr.label3_len.isValid()) {
+                    && hdr.label3_len.isValid() && hdr.label4_len.isValid()) {
                     domain_filter.apply();
                 }
 
@@ -486,28 +679,41 @@ control MyIngress(inout headers hdr,
                     dns_block_counter.read(blk_cnt, 0);
                     dns_block_counter.write(0, blk_cnt + 1);
 
-                    // If DNS response, also block the server IP for future
+                    // If DNS response, also block the resolved IP for future
                     if (meta.is_dns_response == 1) {
-                        bit<32> src_hash;
-                        hash(src_hash, HashAlgorithm.crc32, (bit<32>)0,
-                             { hdr.ipv4.srcAddr }, (bit<32>)BLOCKED_IP_ENTRIES);
-                        blocked_ips.write(src_hash, 1);
+                        bit<32> ip_to_block;
+                        bit<32> ip_hash;
+
+                        // [FUTURE WORK] Prefer A record RDATA IP if parsed
+                        if (hdr.rr_a.isValid()) {
+                            // Extract the resolved IPv4 from DNS answer section
+                            ip_to_block = hdr.rr_a.ipv4_addr;
+                        } else {
+                            // Fallback: use source IP of DNS response (DNS resolver IP)
+                            ip_to_block = hdr.ipv4.srcAddr;
+                        }
+
+                        hash(ip_hash, HashAlgorithm.crc32, (bit<32>)0,
+                             { ip_to_block }, (bit<32>)BLOCKED_IP_ENTRIES);
+                        blocked_ips.write(ip_hash, 1);
                     }
                     return;
                 }
             }
 
             // =============================================================
-            // [ORIGINAL] STAGE 3: TCP Stateful Firewall (Bloom Filter)
+            // [ORIGINAL] STAGE 4: TCP Stateful Firewall (Bloom Filter)
             // Only outgoing SYN creates state; incoming checked against it.
             // =============================================================
             if (hdr.tcp.isValid()){
                 direction = 0;
                 if (check_ports.apply().hit) {
                     if (direction == 0) {
+                        // Outgoing: hash canonical 5-tuple order.
                         compute_hashes(hdr.ipv4.srcAddr, hdr.ipv4.dstAddr,
                                        hdr.tcp.srcPort, hdr.tcp.dstPort);
                     } else {
+                        // Incoming: reverse tuple so it maps to outgoing SYN state.
                         compute_hashes(hdr.ipv4.dstAddr, hdr.ipv4.srcAddr,
                                        hdr.tcp.dstPort, hdr.tcp.srcPort);
                     }
@@ -522,6 +728,7 @@ control MyIngress(inout headers hdr,
                     else if (direction == 1){
                         bloom_filter_1.read(reg_val_one, reg_pos_one);
                         bloom_filter_2.read(reg_val_two, reg_pos_two);
+                        // Any missing bit => flow was not initiated from inside.
                         if (reg_val_one != 1 || reg_val_two != 1){
                             drop();
                         }
@@ -572,6 +779,7 @@ control MyComputeChecksum(inout headers  hdr, inout metadata meta) {
 
 control MyDeparser(packet_out packet, in headers hdr) {
     apply {
+        // BMv2 emits only valid headers; invalid variants are skipped.
         packet.emit(hdr.ethernet);
         packet.emit(hdr.ipv4);
         packet.emit(hdr.tcp);
@@ -610,7 +818,24 @@ control MyDeparser(packet_out packet, in headers hdr) {
         packet.emit(hdr.l3_v13); packet.emit(hdr.l3_v14);
         packet.emit(hdr.l3_v15);
 
+        packet.emit(hdr.label4_len);
+        packet.emit(hdr.l4_v1);  packet.emit(hdr.l4_v2);
+        packet.emit(hdr.l4_v3);  packet.emit(hdr.l4_v4);
+        packet.emit(hdr.l4_v5);  packet.emit(hdr.l4_v6);
+        packet.emit(hdr.l4_v7);  packet.emit(hdr.l4_v8);
+        packet.emit(hdr.l4_v9);  packet.emit(hdr.l4_v10);
+        packet.emit(hdr.l4_v11); packet.emit(hdr.l4_v12);
+        packet.emit(hdr.l4_v13); packet.emit(hdr.l4_v14);
+        packet.emit(hdr.l4_v15);
+
         packet.emit(hdr.label_end);
+
+        // [FUTURE WORK] Emit DNS Answer Section headers
+        packet.emit(hdr.rr_name_len);
+        packet.emit(hdr.rr_name_len2);
+        packet.emit(hdr.rr_fixed);
+        packet.emit(hdr.rr_a);
+        packet.emit(hdr.rr_aaaa);  // IPv6 record
     }
 }
 
