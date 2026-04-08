@@ -1,0 +1,92 @@
+% Future Work Progress Report
+% Compile: pdflatex FUTURE_WORK_PROGRESS_REPORT.tex
+
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\geometry{margin=1in}
+
+\title{P4 Firewall Future Work Progress Report\\\large April 2026 Update}
+\author{Project Team}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{1. Purpose}
+This document summarizes the implementation progress completed for the ``Conclusion and Future Work'' directions from the P4DDPI paper, with emphasis on concrete code changes already integrated in this repository.
+
+\section*{2. Implemented Work}
+\subsection*{2.1 DNS Water-Torture Mitigation (Data Plane)}
+Implemented a lightweight data-plane mitigation path for repeated DNS query bursts:
+\begin{itemize}
+    \item Added per-pattern DNS query rate register tracking.
+    \item Added threshold-based drop logic in ingress pipeline.
+    \item Added counter for blocked water-torture style packets.
+\end{itemize}
+
+\textbf{Result:} Repeated high-rate DNS query patterns can be blocked directly in the switch pipeline without control-plane intervention.
+
+\subsection*{2.2 Encrypted DNS Inference Controls (DoT/DoH Direction)}
+Implemented endpoint-aware filtering for encrypted DNS traffic classes:
+\begin{itemize}
+    \item Added encrypted DNS endpoint table.
+    \item Added detection path for TCP/853 (DoT) and TCP/443 (DoH-like channel).
+    \item Added dedicated block counters for both categories.
+\end{itemize}
+
+\textbf{Result:} Traffic to known encrypted DNS endpoints can be detected and blocked at line-rate.
+
+\subsection*{2.3 Extended Domain Parsing Depth}
+Extended DNS parsing and matching support from 3 labels to 4 labels:
+\begin{itemize}
+    \item Added parser state and headers for label 4 extraction.
+    \item Expanded \texttt{domain\_filter} key set to include \texttt{label4\_len}.
+    \item Updated control-plane generator to emit 4-key entries.
+\end{itemize}
+
+\textbf{Result:} 4-label domains are now representable and matchable in policy.
+
+\section*{3. Control Plane and Runtime Fixes}
+\begin{itemize}
+    \item \textbf{Controller update:} accepts 3-label and 4-label domains; maps 3-label to key form \texttt{(l1,l2,l3,0)}.
+    \item \textbf{Runtime serializer fix:} list-based match values are interpreted as prefix form only for LPM table generation.
+    \item \textbf{Runtime policy sync:} firewall runtime entries moved to 4-key domain format and seeded with encrypted DNS endpoint entries.
+\end{itemize}
+
+\section*{4. Documentation Added/Updated}
+\begin{itemize}
+    \item README updated with April 2026 future-work progress summary.
+    \item Enhancements document updated with implementation status and pending scope.
+    \item Command guide extended with focused validation steps for new features.
+\end{itemize}
+
+\section*{5. Verification Snapshot}
+\begin{itemize}
+    \item Static editor diagnostics for modified files: no new syntax errors reported.
+    \item Controller verification for 4-label domain completed successfully.
+\end{itemize}
+
+\section*{6. Current Status Matrix}
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Future-Work Topic & Status & Notes \\
+\midrule
+DNS water-torture mitigation & Implemented (partial) & Register + threshold drop + counter \\
+Encrypted DNS inference controls & Implemented (policy direction) & Endpoint table + DoT/DoH counters \\
+Parse deeper domains & Implemented (4 labels) & Parser + table + controller updated \\
+Packet recirculation for arbitrary labels & Pending & Not implemented in this pass \\
+DNS answer RR exact-IP extraction & Pending & Not implemented in this pass \\
+Hardware optimization benchmarking & Pending & Requires target hardware campaign \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section*{7. Conclusion}
+This update delivers demonstrable progress on three future-work tracks in code, runtime configuration, and documentation. The project now has a concrete and presentable implementation baseline beyond the original version while clearly preserving a roadmap for remaining advanced items.
+
+\end{document}

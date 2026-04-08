@@ -84,61 +84,67 @@
 
     {
       "table": "MyIngress.domain_filter",
-      "match": { "hdr.label1_len.len": 7, "hdr.label2_len.len": 4, "hdr.label3_len.len": 3 },
+      "match": { "hdr.label1_len.len": 7, "hdr.label2_len.len": 4, "hdr.label3_len.len": 3, "hdr.label4_len.len": 0 },
       "action_name": "MyIngress.dns_block",
       "action_params": {}
     },
     {
       "table": "MyIngress.domain_filter",
-      "match": { "hdr.label1_len.len": 6, "hdr.label2_len.len": 7, "hdr.label3_len.len": 3 },
+      "match": { "hdr.label1_len.len": 6, "hdr.label2_len.len": 7, "hdr.label3_len.len": 3, "hdr.label4_len.len": 0 },
       "action_name": "MyIngress.dns_block",
       "action_params": {}
     },
     {
       "table": "MyIngress.domain_filter",
-      "match": { "hdr.label1_len.len": 5, "hdr.label2_len.len": 3, "hdr.label3_len.len": 3 },
+      "match": { "hdr.label1_len.len": 6, "hdr.label2_len.len": 6, "hdr.label3_len.len": 3, "hdr.label4_len.len": 0 },
       "action_name": "MyIngress.dns_block",
       "action_params": {}
     },
     {
       "table": "MyIngress.domain_filter",
-      "match": { "hdr.label1_len.len": 6, "hdr.label2_len.len": 6, "hdr.label3_len.len": 3 },
+      "match": { "hdr.label1_len.len": 7, "hdr.label2_len.len": 6, "hdr.label3_len.len": 3, "hdr.label4_len.len": 0 },
       "action_name": "MyIngress.dns_block",
       "action_params": {}
     },
     {
       "table": "MyIngress.domain_filter",
-      "match": { "hdr.label1_len.len": 10, "hdr.label2_len.len": 4, "hdr.label3_len.len": 3 },
+      "match": { "hdr.label1_len.len": 8, "hdr.label2_len.len": 4, "hdr.label3_len.len": 3, "hdr.label4_len.len": 0 },
       "action_name": "MyIngress.dns_block",
       "action_params": {}
     },
     {
       "table": "MyIngress.domain_filter",
-      "match": { "hdr.label1_len.len": 8, "hdr.label2_len.len": 4, "hdr.label3_len.len": 3 },
+      "match": { "hdr.label1_len.len": 5, "hdr.label2_len.len": 3, "hdr.label3_len.len": 3, "hdr.label4_len.len": 0 },
       "action_name": "MyIngress.dns_block",
       "action_params": {}
     },
     {
       "table": "MyIngress.domain_filter",
-      "match": { "hdr.label1_len.len": 7, "hdr.label2_len.len": 6, "hdr.label3_len.len": 3 },
+      "match": { "hdr.label1_len.len": 6, "hdr.label2_len.len": 5, "hdr.label3_len.len": 3, "hdr.label4_len.len": 0 },
       "action_name": "MyIngress.dns_block",
       "action_params": {}
     },
     {
       "table": "MyIngress.domain_filter",
-      "match": { "hdr.label1_len.len": 6, "hdr.label2_len.len": 5, "hdr.label3_len.len": 3 },
+      "match": { "hdr.label1_len.len": 6, "hdr.label2_len.len": 4, "hdr.label3_len.len": 3, "hdr.label4_len.len": 0 },
       "action_name": "MyIngress.dns_block",
       "action_params": {}
     },
     {
       "table": "MyIngress.domain_filter",
-      "match": { "hdr.label1_len.len": 7, "hdr.label2_len.len": 5, "hdr.label3_len.len": 3 },
+      "match": { "hdr.label1_len.len": 7, "hdr.label2_len.len": 5, "hdr.label3_len.len": 3, "hdr.label4_len.len": 0 },
       "action_name": "MyIngress.dns_block",
       "action_params": {}
     },
     {
       "table": "MyIngress.domain_filter",
-      "match": { "hdr.label1_len.len": 8, "hdr.label2_len.len": 6, "hdr.label3_len.len": 3 },
+      "match": { "hdr.label1_len.len": 8, "hdr.label2_len.len": 6, "hdr.label3_len.len": 3, "hdr.label4_len.len": 0 },
+      "action_name": "MyIngress.dns_block",
+      "action_params": {}
+    },
+    {
+      "table": "MyIngress.domain_filter",
+      "match": { "hdr.label1_len.len": 8, "hdr.label2_len.len": 5, "hdr.label3_len.len": 3, "hdr.label4_len.len": 0 },
       "action_name": "MyIngress.dns_block",
       "action_params": {}
     },
@@ -153,6 +159,24 @@
       "table": "MyIngress.ip_blacklist",
       "match": { "hdr.ipv4.dstAddr": ["10.10.10.10", 32] },
       "action_name": "MyIngress.drop",
+      "action_params": {}
+    },
+    {
+      "table": "MyIngress.encrypted_dns_endpoints",
+      "match": { "hdr.ipv4.dstAddr": "1.1.1.1" },
+      "action_name": "MyIngress.mark_enc_dns_endpoint",
+      "action_params": {}
+    },
+    {
+      "table": "MyIngress.encrypted_dns_endpoints",
+      "match": { "hdr.ipv4.dstAddr": "8.8.8.8" },
+      "action_name": "MyIngress.mark_enc_dns_endpoint",
+      "action_params": {}
+    },
+    {
+      "table": "MyIngress.encrypted_dns_endpoints",
+      "match": { "hdr.ipv4.dstAddr": "9.9.9.9" },
+      "action_name": "MyIngress.mark_enc_dns_endpoint",
       "action_params": {}
     }
   ]

@@ -28,6 +28,8 @@ def send_scapy(args):
 
     for i in range(args.count):
         if args.response:
+            # Crafted DNS response path:
+            # sport=53 to emulate resolver/server traffic.
             pkt = (Ether(dst="ff:ff:ff:ff:ff:ff") /
                    IP(src=args.src, dst=args.dst) /
                    UDP(sport=53, dport=random.randint(1024, 65535)) /
@@ -36,17 +38,21 @@ def send_scapy(args):
                        an=DNSRR(rrname=args.domain, type='A',
                                 rdata=args.answer_ip, ttl=300)))
         else:
+            # Crafted DNS query path:
+            # random high source port -> destination port 53.
             pkt = (Ether(dst="ff:ff:ff:ff:ff:ff") /
                    IP(src=args.src, dst=args.dst) /
                    UDP(sport=random.randint(1024, 65535), dport=53) /
                    DNS(rd=1, qdcount=1,
                        qd=DNSQR(qname=args.domain, qtype='A')))
 
+        # L2 send on selected interface (Mininet host NIC).
         sendp(pkt, iface=args.iface)
         label = "RESPONSE" if args.response else "QUERY"
         print(f"[{i+1}/{args.count}] Sent DNS {label}: {args.domain} "
               f"({args.src} -> {args.dst})")
 
+        # Optional pacing between packets for easier live observation.
         if args.delay > 0 and i < args.count - 1:
             time.sleep(args.delay)
 
@@ -77,6 +83,7 @@ Examples:
     parser.add_argument('--answer-ip', default='1.2.3.4', help='IP in response')
     args = parser.parse_args()
 
+    # Pre-compute label lengths to compare with firewall's length-based matcher.
     labels = args.domain.split('.')
     print(f"P4 Firewall - DNS Test Sender")
     print(f"=============================")

@@ -27,6 +27,7 @@ def main():
         print("[!] Scapy not found. Install with: pip3 install scapy")
         sys.exit(1)
 
+    # Runtime counters shown after sniff timeout/interrupt.
     stats = {'total': 0, 'queries': 0, 'responses': 0, 'domains': {}}
 
     def process(pkt):
@@ -44,6 +45,7 @@ def main():
 
             domain = "?"
             if dns.qdcount > 0 and dns.qd:
+                # Normalize to plain domain string for readable reporting.
                 domain = dns.qd.qname.decode('utf-8', errors='ignore').rstrip('.')
                 stats['domains'][domain] = stats['domains'].get(domain, 0) + 1
 
@@ -58,6 +60,7 @@ def main():
     print(f"Listening...\n")
 
     try:
+        # Capture only DNS-over-UDP packets to match firewall test scope.
         sniff(iface=args.iface, filter="udp port 53",
               prn=process, timeout=args.timeout, store=0)
     except KeyboardInterrupt:

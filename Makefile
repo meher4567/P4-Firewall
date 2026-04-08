@@ -16,6 +16,7 @@ PCAP_DIR   = pcaps
 TOPO       = pod-topo/topology.json
 
 .PHONY: all build run stop clean help test-blocked test-allowed test-tcp test-stats
+# .PHONY forces these targets to run even if files with same names exist.
 
 # ---- Default target ----
 all: build
@@ -55,6 +56,8 @@ run: build
 	@echo "  Firewall: $(BUILD_DIR)/firewall.json (switch s1)"
 	@echo "  Basic:    $(BUILD_DIR)/basic.json (switches s2-s4)"
 	@echo "============================================"
+	# run_network.py launches Mininet, starts BMv2 switches,
+	# loads runtime table entries, then opens Mininet CLI.
 	sudo python3 run_network.py \
 		--topo $(TOPO) \
 		--bmv2-exe simple_switch_grpc \

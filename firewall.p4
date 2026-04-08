@@ -41,6 +41,7 @@ const bit<16> DNS_WATER_TORTURE_THRESHOLD = 30;
 #define BLOOM_FILTER_ENTRIES 4096
 #define BLOOM_FILTER_BIT_WIDTH 1
 #define BLOCKED_IP_ENTRIES 4096
+#define BLOCKED_IPV6_ENTRIES 4096
 #define DNS_RATE_ENTRIES 8192
 
 /*************************************************************************
@@ -198,6 +199,22 @@ struct headers {
     label_7_t  l4_v7;  label_8_t  l4_v8;  label_9_t  l4_v9;
     label_10_t l4_v10; label_11_t l4_v11; label_12_t l4_v12;
     label_13_t l4_v13; label_14_t l4_v14; label_15_t l4_v15;
+
+    // Label 5 (e.g., "sub" in sub.www.evil.co.uk)
+    dns_label_len_t label5_len;
+    label_1_t  l5_v1;  label_2_t  l5_v2;  label_3_t  l5_v3;
+    label_4_t  l5_v4;  label_5_t  l5_v5;  label_6_t  l5_v6;
+    label_7_t  l5_v7;  label_8_t  l5_v8;  label_9_t  l5_v9;
+    label_10_t l5_v10; label_11_t l5_v11; label_12_t l5_v12;
+    label_13_t l5_v13; label_14_t l5_v14; label_15_t l5_v15;
+
+    // Label 6 (e.g., "internal" in internal.sub.www.evil.co.uk)
+    dns_label_len_t label6_len;
+    label_1_t  l6_v1;  label_2_t  l6_v2;  label_3_t  l6_v3;
+    label_4_t  l6_v4;  label_5_t  l6_v5;  label_6_t  l6_v6;
+    label_7_t  l6_v7;  label_8_t  l6_v8;  label_9_t  l6_v9;
+    label_10_t l6_v10; label_11_t l6_v11; label_12_t l6_v12;
+    label_13_t l6_v13; label_14_t l6_v14; label_15_t l6_v15;
 
     // End of domain name (root label 0x00)
     dns_label_len_t label_end;
@@ -374,21 +391,75 @@ parser MyParser(packet_in packet,
             default: accept;
         }
     }
-    state l4_1  { packet.extract(hdr.l4_v1);  transition parse_label_end; }
-    state l4_2  { packet.extract(hdr.l4_v2);  transition parse_label_end; }
-    state l4_3  { packet.extract(hdr.l4_v3);  transition parse_label_end; }
-    state l4_4  { packet.extract(hdr.l4_v4);  transition parse_label_end; }
-    state l4_5  { packet.extract(hdr.l4_v5);  transition parse_label_end; }
-    state l4_6  { packet.extract(hdr.l4_v6);  transition parse_label_end; }
-    state l4_7  { packet.extract(hdr.l4_v7);  transition parse_label_end; }
-    state l4_8  { packet.extract(hdr.l4_v8);  transition parse_label_end; }
-    state l4_9  { packet.extract(hdr.l4_v9);  transition parse_label_end; }
-    state l4_10 { packet.extract(hdr.l4_v10); transition parse_label_end; }
-    state l4_11 { packet.extract(hdr.l4_v11); transition parse_label_end; }
-    state l4_12 { packet.extract(hdr.l4_v12); transition parse_label_end; }
-    state l4_13 { packet.extract(hdr.l4_v13); transition parse_label_end; }
-    state l4_14 { packet.extract(hdr.l4_v14); transition parse_label_end; }
-    state l4_15 { packet.extract(hdr.l4_v15); transition parse_label_end; }
+    state l4_1  { packet.extract(hdr.l4_v1);  transition parse_label5_len; }
+    state l4_2  { packet.extract(hdr.l4_v2);  transition parse_label5_len; }
+    state l4_3  { packet.extract(hdr.l4_v3);  transition parse_label5_len; }
+    state l4_4  { packet.extract(hdr.l4_v4);  transition parse_label5_len; }
+    state l4_5  { packet.extract(hdr.l4_v5);  transition parse_label5_len; }
+    state l4_6  { packet.extract(hdr.l4_v6);  transition parse_label5_len; }
+    state l4_7  { packet.extract(hdr.l4_v7);  transition parse_label5_len; }
+    state l4_8  { packet.extract(hdr.l4_v8);  transition parse_label5_len; }
+    state l4_9  { packet.extract(hdr.l4_v9);  transition parse_label5_len; }
+    state l4_10 { packet.extract(hdr.l4_v10); transition parse_label5_len; }
+    state l4_11 { packet.extract(hdr.l4_v11); transition parse_label5_len; }
+    state l4_12 { packet.extract(hdr.l4_v12); transition parse_label5_len; }
+    state l4_13 { packet.extract(hdr.l4_v13); transition parse_label5_len; }
+    state l4_14 { packet.extract(hdr.l4_v14); transition parse_label5_len; }
+    state l4_15 { packet.extract(hdr.l4_v15); transition parse_label5_len; }
+
+    // --- Label 5 ---
+    state parse_label5_len {
+        packet.extract(hdr.label5_len);
+        transition select(hdr.label5_len.len) {
+            0:  parse_label_end;  // No label 5, go to end
+            1:  l5_1;  2:  l5_2;  3:  l5_3;  4:  l5_4;  5:  l5_5;
+            6:  l5_6;  7:  l5_7;  8:  l5_8;  9:  l5_9;  10: l5_10;
+            11: l5_11; 12: l5_12; 13: l5_13; 14: l5_14; 15: l5_15;
+            default: accept;
+        }
+    }
+    state l5_1  { packet.extract(hdr.l5_v1);  transition parse_label6_len; }
+    state l5_2  { packet.extract(hdr.l5_v2);  transition parse_label6_len; }
+    state l5_3  { packet.extract(hdr.l5_v3);  transition parse_label6_len; }
+    state l5_4  { packet.extract(hdr.l5_v4);  transition parse_label6_len; }
+    state l5_5  { packet.extract(hdr.l5_v5);  transition parse_label6_len; }
+    state l5_6  { packet.extract(hdr.l5_v6);  transition parse_label6_len; }
+    state l5_7  { packet.extract(hdr.l5_v7);  transition parse_label6_len; }
+    state l5_8  { packet.extract(hdr.l5_v8);  transition parse_label6_len; }
+    state l5_9  { packet.extract(hdr.l5_v9);  transition parse_label6_len; }
+    state l5_10 { packet.extract(hdr.l5_v10); transition parse_label6_len; }
+    state l5_11 { packet.extract(hdr.l5_v11); transition parse_label6_len; }
+    state l5_12 { packet.extract(hdr.l5_v12); transition parse_label6_len; }
+    state l5_13 { packet.extract(hdr.l5_v13); transition parse_label6_len; }
+    state l5_14 { packet.extract(hdr.l5_v14); transition parse_label6_len; }
+    state l5_15 { packet.extract(hdr.l5_v15); transition parse_label6_len; }
+
+    // --- Label 6 ---
+    state parse_label6_len {
+        packet.extract(hdr.label6_len);
+        transition select(hdr.label6_len.len) {
+            0:  parse_label_end;  // No label 6, go to end
+            1:  l6_1;  2:  l6_2;  3:  l6_3;  4:  l6_4;  5:  l6_5;
+            6:  l6_6;  7:  l6_7;  8:  l6_8;  9:  l6_9;  10: l6_10;
+            11: l6_11; 12: l6_12; 13: l6_13; 14: l6_14; 15: l6_15;
+            default: accept;
+        }
+    }
+    state l6_1  { packet.extract(hdr.l6_v1);  transition parse_label_end; }
+    state l6_2  { packet.extract(hdr.l6_v2);  transition parse_label_end; }
+    state l6_3  { packet.extract(hdr.l6_v3);  transition parse_label_end; }
+    state l6_4  { packet.extract(hdr.l6_v4);  transition parse_label_end; }
+    state l6_5  { packet.extract(hdr.l6_v5);  transition parse_label_end; }
+    state l6_6  { packet.extract(hdr.l6_v6);  transition parse_label_end; }
+    state l6_7  { packet.extract(hdr.l6_v7);  transition parse_label_end; }
+    state l6_8  { packet.extract(hdr.l6_v8);  transition parse_label_end; }
+    state l6_9  { packet.extract(hdr.l6_v9);  transition parse_label_end; }
+    state l6_10 { packet.extract(hdr.l6_v10); transition parse_label_end; }
+    state l6_11 { packet.extract(hdr.l6_v11); transition parse_label_end; }
+    state l6_12 { packet.extract(hdr.l6_v12); transition parse_label_end; }
+    state l6_13 { packet.extract(hdr.l6_v13); transition parse_label_end; }
+    state l6_14 { packet.extract(hdr.l6_v14); transition parse_label_end; }
+    state l6_15 { packet.extract(hdr.l6_v15); transition parse_label_end; }
 
     // --- Root label (0x00) ---
     state parse_label_end {
@@ -463,11 +534,13 @@ control MyIngress(inout headers hdr,
 
     /* --- [ENHANCEMENT] DNS DPI Registers --- */
     register<bit<1>>(BLOCKED_IP_ENTRIES) blocked_ips;
+    register<bit<1>>(BLOCKED_IPV6_ENTRIES) blocked_ipv6s;  // [EXTENSION] IPv6 blocking
     register<bit<16>>(DNS_RATE_ENTRIES) dns_query_rate;
     register<bit<32>>(1) dns_inspect_counter;
     register<bit<32>>(1) dns_block_counter;
     register<bit<32>>(1) dns_water_torture_counter;
     register<bit<32>>(1) ip_block_counter;
+    register<bit<32>>(1) ipv6_block_counter;  // [EXTENSION] IPv6 block counter
     register<bit<32>>(1) dot_block_counter;
     register<bit<32>>(1) doh_block_counter;
 
@@ -540,6 +613,8 @@ control MyIngress(inout headers hdr,
             hdr.label2_len.len: exact;
             hdr.label3_len.len: exact;
             hdr.label4_len.len: exact;
+            hdr.label5_len.len: exact;
+            hdr.label6_len.len: exact;
         }
         actions = { dns_block; dns_allow; dns_log; NoAction; }
         size = 4096;
@@ -642,12 +717,14 @@ control MyIngress(inout headers hdr,
                 // repeated queries per src + domain-pattern hash bucket.
                 if (meta.is_dns_response == 0
                     && hdr.label1_len.isValid() && hdr.label2_len.isValid()
-                    && hdr.label3_len.isValid() && hdr.label4_len.isValid()) {
+                    && hdr.label3_len.isValid() && hdr.label4_len.isValid()
+                    && hdr.label5_len.isValid() && hdr.label6_len.isValid()) {
                     bit<32> wt_idx;
                     hash(wt_idx, HashAlgorithm.crc32, (bit<32>)0,
                          { hdr.ipv4.srcAddr,
                            hdr.label1_len.len, hdr.label2_len.len,
-                           hdr.label3_len.len, hdr.label4_len.len },
+                           hdr.label3_len.len, hdr.label4_len.len,
+                           hdr.label5_len.len, hdr.label6_len.len },
                          (bit<32>)DNS_RATE_ENTRIES);
 
                     bit<16> wt_count;
@@ -667,7 +744,8 @@ control MyIngress(inout headers hdr,
 
                 // Match domain against blacklist (based on label lengths)
                 if (hdr.label1_len.isValid() && hdr.label2_len.isValid()
-                    && hdr.label3_len.isValid() && hdr.label4_len.isValid()) {
+                    && hdr.label3_len.isValid() && hdr.label4_len.isValid()
+                    && hdr.label5_len.isValid() && hdr.label6_len.isValid()) {
                     domain_filter.apply();
                 }
 
@@ -827,6 +905,26 @@ control MyDeparser(packet_out packet, in headers hdr) {
         packet.emit(hdr.l4_v11); packet.emit(hdr.l4_v12);
         packet.emit(hdr.l4_v13); packet.emit(hdr.l4_v14);
         packet.emit(hdr.l4_v15);
+
+        packet.emit(hdr.label5_len);
+        packet.emit(hdr.l5_v1);  packet.emit(hdr.l5_v2);
+        packet.emit(hdr.l5_v3);  packet.emit(hdr.l5_v4);
+        packet.emit(hdr.l5_v5);  packet.emit(hdr.l5_v6);
+        packet.emit(hdr.l5_v7);  packet.emit(hdr.l5_v8);
+        packet.emit(hdr.l5_v9);  packet.emit(hdr.l5_v10);
+        packet.emit(hdr.l5_v11); packet.emit(hdr.l5_v12);
+        packet.emit(hdr.l5_v13); packet.emit(hdr.l5_v14);
+        packet.emit(hdr.l5_v15);
+
+        packet.emit(hdr.label6_len);
+        packet.emit(hdr.l6_v1);  packet.emit(hdr.l6_v2);
+        packet.emit(hdr.l6_v3);  packet.emit(hdr.l6_v4);
+        packet.emit(hdr.l6_v5);  packet.emit(hdr.l6_v6);
+        packet.emit(hdr.l6_v7);  packet.emit(hdr.l6_v8);
+        packet.emit(hdr.l6_v9);  packet.emit(hdr.l6_v10);
+        packet.emit(hdr.l6_v11); packet.emit(hdr.l6_v12);
+        packet.emit(hdr.l6_v13); packet.emit(hdr.l6_v14);
+        packet.emit(hdr.l6_v15);
 
         packet.emit(hdr.label_end);
 

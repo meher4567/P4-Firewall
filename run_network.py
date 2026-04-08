@@ -32,6 +32,8 @@ from mininet.log import setLogLevel, info
 
 class P4Host:
     """Mixin for configuring Mininet hosts with P4 switch support."""
+    # Placeholder for future host-specific helpers.
+    # Kept for compatibility with common p4lang topology patterns.
     pass
 
 
@@ -52,6 +54,8 @@ class P4Switch:
 
     def start(self, interfaces):
         """Start the BMv2 switch process."""
+        # Build BMv2 command with explicit port->interface bindings.
+        # Port numbers must match table rules in runtime JSON files.
         cmd = [
             'simple_switch_grpc',
             '--log-console',
@@ -59,7 +63,7 @@ class P4Switch:
             '-i', '1@{}'.format(interfaces.get(1, 's-eth1')),
             '-i', '2@{}'.format(interfaces.get(2, 's-eth2')),
         ]
-        # Add port 3 and 4 if they exist
+        # Add optional uplink ports for the pod topology core links.
         if 3 in interfaces:
             cmd.extend(['-i', '3@{}'.format(interfaces[3])])
         if 4 in interfaces:
@@ -76,6 +80,7 @@ class P4Switch:
 
         log_file = os.path.join(self.log_dir, '{}.log'.format(self.name))
         with open(log_file, 'w') as lf:
+            # Keep process handle so we can terminate cleanly on exit.
             self.process = subprocess.Popen(cmd, stdout=lf, stderr=lf)
 
         info('*** Started {} (thrift={}, grpc={}, pid={})\n'.format(
@@ -94,7 +99,7 @@ class P4Switch:
         if not entries:
             return
 
-        # Build CLI commands
+        # Translate JSON table entries into simple_switch_CLI commands.
         cli_cmds = []
         for entry in entries:
             table = entry['table']
@@ -110,8 +115,14 @@ class P4Switch:
             match = entry.get('match', {})
             match_parts = []
             for key, val in match.items():
+                # LPM matches are encoded as [value, prefix]. Some exact matches
+                # may also be expressed as [value, 32] in runtime JSON; handle
+                # those as plain exact values for non-LPM tables.
                 if isinstance(val, list):
-                    match_parts.append('{}/{}'.format(val[0], val[1]))
+                    if table.endswith('ipv4_lpm') and len(val) == 2:
+                        match_parts.append('{}/{}'.format(val[0], val[1]))
+                    elif len(val) > 0:
+                        match_parts.append(str(val[0]))
                 else:
                     match_parts.append(str(val))
 
@@ -120,7 +131,7 @@ class P4Switch:
             cli_cmds.append('table_add {} {} {} => {}'.format(
                 table, action, match_str, param_str).strip())
 
-        # Send commands to switch via CLI
+        # Send all commands in one CLI session for faster startup.
         cmd_input = '\n'.join(cli_cmds) + '\n'
         try:
             proc = subprocess.Popen(
@@ -158,7 +169,7 @@ class FirewallTopo(Topo):
         h3 = self.addHost('h3', ip='10.0.3.3/24', mac='08:00:00:00:03:33')
         h4 = self.addHost('h4', ip='10.0.4.4/24', mac='08:00:00:00:04:44')
 
-        # Links: h1-s1, h2-s1, s1-s3, s1-s4, h3-s2, h4-s2, s2-s4, s2-s3
+        # Links define internal (h1,h2) and external (h3,h4) sides across pod core.
         self.addLink(h1, s1, port2=1)
         self.addLink(h2, s1, port2=2)
         self.addLink(s1, s3, port1=3, port2=1)
@@ -176,6 +187,7 @@ def run(args):
     os.makedirs(args.log_dir, exist_ok=True)
     os.makedirs(args.pcap_dir, exist_ok=True)
 
+    # Load host boot-time commands (routes + ARP) and metadata.
     with open(args.topo) as f:
         topo_config = json.load(f)
 
@@ -183,7 +195,8 @@ def run(args):
     topo = FirewallTopo()
     net = Mininet(topo=topo, link=TCLink, controller=None)
 
-    # Configure switch processes
+    # Configure one BMv2 process per switch.
+    # s1 runs firewall program; s2/s3/s4 run basic forwarding program.
     switches = {}
     switch_configs = [
         ('s1', args.firewall_json, 'pod-topo/s1-runtime.json', 9090, 50051, 0),
@@ -203,7 +216,7 @@ def run(args):
     info('*** Starting network\n')
     net.start()
 
-    # Collect interface names from Mininet for each switch
+    # Collect Mininet-created interface names and map them to BMv2 ports.
     info('*** Starting BMv2 switches\n')
     for sw_name, sw_obj in switches.items():
         mn_switch = net.get(sw_name)
@@ -211,8 +224,7 @@ def run(args):
         for intf in mn_switch.intfList():
             if intf.name == 'lo':
                 continue
-            # Parse port number from the interface name
-            # Format is typically: s1-eth1, s1-eth2, etc.
+            # Parse port number from interface naming convention (e.g., s1-eth3).
             port = int(intf.name.split('eth')[-1]) if 'eth' in intf.name else None
             if port:
                 interfaces[port] = intf.name
@@ -222,12 +234,12 @@ def run(args):
     info('*** Waiting for switches to initialize...\n')
     time.sleep(2)
 
-    # Load runtime table entries
+    # Program data-plane tables through thrift CLI before traffic starts.
     info('*** Loading table entries\n')
     for sw_obj in switches.values():
         sw_obj.load_runtime()
 
-    # Configure hosts (default gateway + ARP)
+    # Configure hosts (default gateway + static ARP) for deterministic forwarding.
     info('*** Configuring hosts\n')
     for host_name, host_cfg in topo_config.get('hosts', {}).items():
         host = net.get(host_name)

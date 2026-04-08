@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 /* -*- P4_16 -*- */
+/*
+ * basic.p4
+ * --------
+ * Lightweight IPv4 forwarding pipeline used by non-firewall switches
+ * (s2, s3, s4). It performs route lookup + L2 rewrite only.
+ */
 #include <core.p4>
 #include <v1model.p4>
 
@@ -58,6 +64,7 @@ parser MyParser(packet_in packet,
 
     state parse_ethernet {
         packet.extract(hdr.ethernet);
+        // Only IPv4 packets are parsed further; others pass unchanged.
         transition select(hdr.ethernet.etherType) {
             TYPE_IPV4: parse_ipv4;
             default: accept;
@@ -92,9 +99,11 @@ control MyIngress(inout headers hdr,
     }
 
     action ipv4_forward(macAddr_t dstAddr, egressSpec_t port) {
+        // Set output port and rewrite Ethernet headers for next hop.
         standard_metadata.egress_spec = port;
         hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
         hdr.ethernet.dstAddr = dstAddr;
+        // Standard router behavior: decrement TTL by 1 hop.
         hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
     }
 
@@ -113,6 +122,7 @@ control MyIngress(inout headers hdr,
 
     apply {
         if (hdr.ipv4.isValid()) {
+            // Single-table pipeline: LPM lookup decides forward/drop.
             ipv4_lpm.apply();
         }
     }
@@ -158,6 +168,7 @@ control MyComputeChecksum(inout headers  hdr, inout metadata meta) {
 
 control MyDeparser(packet_out packet, in headers hdr) {
     apply {
+        // Emit parsed headers back in protocol order.
         packet.emit(hdr.ethernet);
         packet.emit(hdr.ipv4);
     }

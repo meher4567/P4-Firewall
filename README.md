@@ -59,6 +59,27 @@ Packet → [Layer 1: IP Blacklist] → [Layer 2: DNS DPI] → [Layer 3: TCP Bloo
 | 2. DNS DPI | Parses DNS payload, blocks blacklisted domain queries | P4DDPI paper |
 | 3. TCP Bloom Filter | Blocks unsolicited incoming TCP connections | p4lang/tutorials |
 
+## Future Work Progress (April 2026)
+
+The paper's future-work directions were partially implemented in this project:
+
+1. DNS attack mitigation (water-torture style)
+- Implemented a DNS query-rate mitigation register in `firewall.p4` keyed by source + domain-length pattern.
+- Packets that exceed a dataplane threshold are dropped and counted.
+
+2. Encrypted DNS inference (DoT/DoH)
+- Implemented endpoint-aware filtering for known encrypted DNS resolvers.
+- DoT (`TCP/853`) and DoH-like (`TCP/443`) flows to configured endpoints are blocked and counted.
+
+3. Parsing deeper domain structures
+- Extended parser/table support from 3 labels to 4 labels (e.g., `www.evil.co.uk`) without changing target architecture.
+- Controller and runtime rules now support the fourth label key.
+
+Not yet implemented:
+- Full packet recirculation loop for arbitrary label counts.
+- DNS answer-section (`RR`) parsing to learn exact resolved IPs from payload data.
+- Hardware-target optimization study (Tofino resource/perf tuning).
+
 ---
 
 ## Prerequisites
@@ -198,6 +219,50 @@ tcpdump -r pcaps/s1-eth3_out.pcap -n udp port 53   # Packets leaving s1 to s3
 
 # Blocked DNS packets appear in eth1_in but NOT in eth3_out
 ```
+
+---
+
+#### TEST 7: Water-Torture Mitigation Counter
+
+```bash
+# Send many repeated DNS queries from h1 (default sender emits multiple packets)
+mininet> h1 python3 tests/send_dns.py -d www.google.com --dst 10.0.3.3 -c 60 -d 0
+
+# In separate shell:
+simple_switch_CLI --thrift-port 9090
+RuntimeCmd: register_read dns_water_torture_counter 0
+```
+
+**Expected**: Counter increases when repeated query rate crosses threshold.
+
+---
+
+#### TEST 8: Encrypted DNS (DoT/DoH) Counters
+
+```bash
+# Craft TCP traffic to known encrypted DNS endpoint IPs in runtime table
+# (example with h1 tools if available)
+mininet> h1 hping3 -S -p 853 1.1.1.1 -c 3
+mininet> h1 hping3 -S -p 443 8.8.8.8 -c 3
+
+# In separate shell:
+simple_switch_CLI --thrift-port 9090
+RuntimeCmd: register_read dot_block_counter 0
+RuntimeCmd: register_read doh_block_counter 0
+```
+
+**Expected**: Counters increase for traffic matching encrypted DNS endpoint policy.
+
+---
+
+#### TEST 9: 4-Label Domain Matching
+
+```bash
+# Add a 4-label rule using controller output, then test with sender
+# Example domain: test.bad.evil.com -> (4,3,4,3)
+```
+
+**Expected**: 4-label patterns are parsed and matchable via `domain_filter`.
 
 ---
 

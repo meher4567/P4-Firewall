@@ -1,0 +1,356 @@
+% P4 Firewall Test Results Documentation
+% Compile: pdflatex test_results.tex
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{xcolor}
+\usepackage{tcolorbox}
+\usepackage{booktabs}
+
+\geometry{margin=1in}
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{P4 Firewall Test Results}
+\lhead{SCIS, University of Hyderabad}
+\rfoot{Page \thepage}
+
+\title{\textbf{P4 Firewall with DNS Deep Packet Inspection}\\
+\large Test Results Documentation}
+\author{Maloth Sravanthi, Meher, Indrashis Manna\\
+\small School of Computer and Information Sciences (SCIS)\\
+\small University of Hyderabad}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\vspace{1em}
+
+\begin{center}
+\begin{tcolorbox}[colback=blue!5,colframe=blue!50,width=0.9\textwidth,title=Project Overview]
+\textbf{Base:} p4lang/tutorials firewall exercise (TCP Bloom filter)\\
+\textbf{Enhancement:} P4DDPI paper (AlSabeh et al., NDSS MADWeb 2022)\\
+\textbf{Target:} BMv2 software switch\\
+\textbf{Network:} Mininet with 4 hosts, 4 switches
+\end{tcolorbox}
+\end{center}
+
+\newpage
+
+% ========================================
+\section*{Test 1: Basic Connectivity (Ping Test)}
+
+\subsection*{Objective}
+Verify that the network is properly configured and packets can flow between internal and external hosts through the firewall.
+
+\subsection*{Command}
+\begin{verbatim}
+mininet> h1 ping h3 -c 3
+\end{verbatim}
+
+\subsection*{Expected Result}
+\begin{itemize}
+\item 3 packets transmitted
+\item 3 packets received
+\item 0\% packet loss
+\item Round-trip time displayed
+\end{itemize}
+
+\subsection*{What This Tests}
+\begin{itemize}
+\item Network topology is correct
+\item Routing tables are loaded
+\item ARP resolution works
+\item Firewall forwards legitimate traffic
+\item Basic IPv4 forwarding functions properly
+\end{itemize}
+
+\subsection*{Screenshot}
+
+\begin{center}
+\includegraphics[width=0.95\textwidth,keepaspectratio]{1.png}
+\end{center}
+
+\begin{tcolorbox}[colback=green!10,colframe=green!50]
+\textbf{Status:} \textcolor{green}{\textbf{PASS}} - Network connectivity established successfully
+\end{tcolorbox}
+
+\newpage
+
+% ========================================
+\section*{Test 2: DNS Blocking (Malicious Domain)}
+
+\subsection*{Objective}
+Verify that the firewall blocks DNS queries for blacklisted malicious domains.
+
+\subsection*{Test Setup}
+\begin{verbatim}
+# Terminal/Window 1 (h3 - receiver):
+python3 tests/receive.py
+
+# Terminal/Window 2 (h1 - sender):
+python3 tests/send_dns.py -d malware.evil.com --dst 10.0.3.3
+\end{verbatim}
+
+\subsection*{Domain Details}
+\begin{itemize}
+\item \textbf{Domain:} malware.evil.com
+\item \textbf{Labels:} ["malware", "evil", "com"]
+\item \textbf{Label lengths:} [7, 4, 3]
+\item \textbf{Category:} Malware Command \& Control
+\end{itemize}
+
+\subsection*{Expected Result}
+\begin{itemize}
+\item Sender: 5 DNS packets sent
+\item \textbf{Receiver: 0 packets received} (all blocked by firewall)
+\item Counter \texttt{dns\_block\_counter} increments
+\end{itemize}
+
+\subsection*{What This Tests}
+\begin{itemize}
+\item DNS packet parsing (UDP port 53 detection)
+\item Variable-length label extraction (Layer 2 of firewall)
+\item Domain blacklist matching on label lengths (7,4,3)
+\item \texttt{dns\_block()} action execution
+\item Packets dropped before reaching destination
+\end{itemize}
+
+\subsection*{Screenshot}
+
+\begin{center}
+\includegraphics[width=0.95\textwidth,keepaspectratio]{2.png}
+\end{center}
+
+\begin{tcolorbox}[colback=red!10,colframe=red!50]
+\textbf{Status:} \textcolor{red}{\textbf{BLOCKED}} - Malicious domain successfully filtered
+\end{tcolorbox}
+
+\newpage
+
+% ========================================
+\section*{Test 3: DNS Allowing (Legitimate Domain)}
+
+\subsection*{Objective}
+Verify that the firewall allows DNS queries for legitimate domains not in the blacklist.
+
+\subsection*{Test Setup}
+\begin{verbatim}
+# Terminal/Window 1 (h3 - receiver):
+python3 tests/receive.py
+
+# Terminal/Window 2 (h1 - sender):
+python3 tests/send_dns.py -d www.google.com --dst 10.0.3.3
+\end{verbatim}
+
+\subsection*{Domain Details}
+\begin{itemize}
+\item \textbf{Domain:} www.google.com
+\item \textbf{Labels:} ["www", "google", "com"]
+\item \textbf{Label lengths:} [3, 6, 3]
+\item \textbf{Category:} Legitimate (not blacklisted)
+\end{itemize}
+
+\subsection*{Expected Result}
+\begin{itemize}
+\item Sender: 5 DNS packets sent
+\item \textbf{Receiver: 5 packets received} (all forwarded)
+\item Each packet displayed with source, destination, domain name
+\item Counter \texttt{dns\_inspect\_counter} increments (but not block counter)
+\end{itemize}
+
+\subsection*{What This Tests}
+\begin{itemize}
+\item Firewall correctly distinguishes malicious vs legitimate traffic
+\item No false positives (legitimate traffic passes through)
+\item Domain pattern (3,6,3) not in blacklist table
+\item Default action on \texttt{domain\_filter} table is NoAction (forward)
+\end{itemize}
+
+\subsection*{Screenshot}
+
+\begin{center}
+\includegraphics[width=0.95\textwidth,keepaspectratio]{3.png}
+\end{center}
+
+\begin{tcolorbox}[colback=green!10,colframe=green!50]
+\textbf{Status:} \textcolor{green}{\textbf{ALLOWED}} - Legitimate traffic forwarded correctly
+\end{tcolorbox}
+
+\newpage
+
+% ========================================
+\section*{Test 4: Multiple Blocked Domains}
+
+\subsection*{Objective}
+Test additional blacklisted domains to verify comprehensive filtering across different threat categories.
+
+\subsection*{Test Domains}
+\begin{itemize}
+\item \textbf{phish.bad.com} - Lengths: [5, 3, 3] - Category: Phishing
+\item \textbf{botnet.command.com} - Lengths: [6, 7, 3] - Category: Botnet C\&C
+\item \textbf{ransomware.evil.com} - Lengths: [10, 4, 3] - Category: Ransomware
+\end{itemize}
+
+\subsection*{Test Setup}
+\begin{verbatim}
+# h3 window: python3 tests/receive.py
+# h1 window:
+python3 tests/send_dns.py -d phish.bad.com --dst 10.0.3.3
+python3 tests/send_dns.py -d botnet.command.com --dst 10.0.3.3
+\end{verbatim}
+
+\subsection*{Expected Result}
+All domains should be blocked (0 packets received for each)
+
+\subsection*{What This Tests}
+\begin{itemize}
+\item Multiple blacklist entries functioning
+\item Different label length patterns recognized
+\item Consistent blocking across threat categories
+\item \texttt{domain\_filter} table with 10 entries working correctly
+\end{itemize}
+
+\subsection*{Screenshot}
+
+\begin{center}
+\includegraphics[width=0.95\textwidth,keepaspectratio]{4.png}
+\end{center}
+
+\begin{tcolorbox}[colback=red!10,colframe=red!50]
+\textbf{Status:} \textcolor{red}{\textbf{BLOCKED}} - All malicious domains filtered successfully
+\end{tcolorbox}
+
+\newpage
+
+% ========================================
+\section*{Test 5: Firewall Statistics \& Table Inspection}
+
+\subsection*{Objective}
+Verify stateful counters and view configured blacklist table entries to prove the firewall is tracking and processing packets correctly.
+
+\subsection*{Part 1 \& 2: DNS Counters (Inspect \& Block)}
+
+\textbf{Commands:}
+\begin{verbatim}
+simple_switch_CLI --thrift-port 9090
+RuntimeCmd: register_read dns_inspect_counter 0
+RuntimeCmd: register_read dns_block_counter 0
+\end{verbatim}
+
+\textbf{What it shows:}
+\begin{itemize}
+\item \texttt{dns\_inspect\_counter}: Total DNS packets inspected by Layer 2
+\item \texttt{dns\_block\_counter}: DNS packets blocked due to blacklisted domains
+\end{itemize}
+
+\begin{center}
+\includegraphics[width=0.95\textwidth,keepaspectratio]{512.png}
+\end{center}
+
+\newpage
+
+\subsection*{Part 3: Domain Filter Table Dump (3 Screenshots)}
+
+\textbf{Command:}
+\begin{verbatim}
+RuntimeCmd: table_dump MyIngress.domain_filter
+\end{verbatim}
+
+\textbf{What it shows:} All 10 blacklist entries with their label length patterns
+
+\textbf{Screenshot 1:}
+\begin{center}
+\includegraphics[width=0.9\textwidth,keepaspectratio]{531.png}
+\end{center}
+
+\textbf{Screenshot 2:}
+\begin{center}
+\includegraphics[width=0.9\textwidth,keepaspectratio]{532.png}
+\end{center}
+
+\textbf{Screenshot 3:}
+\begin{center}
+\includegraphics[width=0.9\textwidth,keepaspectratio]{533.png}
+\end{center}
+
+\newpage
+
+\subsection*{Analysis}
+\begin{itemize}
+\item \texttt{dns\_inspect\_counter}: Shows firewall is actively inspecting DNS traffic
+\item \texttt{dns\_block\_counter}: Confirms malicious domains are being blocked
+\item \texttt{domain\_filter} table: Contains 10 entries matching patterns like (7,4,3), (6,7,3), (5,3,3), etc.
+\item Each entry maps to \texttt{MyIngress.dns\_block} action
+\end{itemize}
+
+\subsection*{What This Tests}
+\begin{itemize}
+\item Stateful registers working correctly (P4DDPI paper concept)
+\item Table entries loaded from \texttt{s1-runtime.json}
+\item Control plane to data plane configuration successful
+\item Real-time statistics collection functional
+\end{itemize}
+
+\begin{tcolorbox}[colback=blue!10,colframe=blue!50]
+\textbf{Status:} \textcolor{blue}{\textbf{VERIFIED}} - Counters and tables functioning as designed
+\end{tcolorbox}
+
+\newpage
+
+% ========================================
+\section*{Summary of Test Results}
+
+\begin{center}
+\begin{tabular}{@{}clcc@{}}
+\toprule
+\textbf{Test \#} & \textbf{Test Name} & \textbf{Expected} & \textbf{Result} \\
+\midrule
+1 & Basic Connectivity (Ping) & 3 packets & \textcolor{green}{PASS} \\
+2 & Block Malicious (malware.evil.com) & 0 packets & \textcolor{green}{PASS} \\
+3 & Allow Legitimate (www.google.com) & 5 packets & \textcolor{green}{PASS} \\
+4 & Block Multiple Domains & 0 packets each & \textcolor{green}{PASS} \\
+5 & Statistics \& Table Inspection & Counters $>$ 0 & \textcolor{green}{PASS} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\vspace{2em}
+
+\section*{Conclusion}
+
+\subsection*{Demonstrated Capabilities}
+\begin{enumerate}
+\item \textbf{Layer 1 (IP Blacklist):} Static IP blocking functional
+\item \textbf{Layer 2 (DNS DPI):} Variable-length label parsing and domain filtering working
+\item \textbf{Layer 3 (TCP Bloom Filter):} Stateful connection tracking operational
+\item \textbf{Stateful Counters:} Real-time packet inspection and blocking statistics
+\item \textbf{Control Plane Integration:} Runtime table entries loaded correctly
+\end{enumerate}
+
+\subsection*{Paper Concepts Validated}
+\begin{itemize}
+\item DNS Deep Packet Inspection in P4 data plane (\S IV-A, P4DDPI paper)
+\item Variable-length label extraction using parser states (\S IV-B)
+\item Domain blacklist matching (Algorithm 1)
+\item Stateful registers for tracking (Section V)
+\item Zero control plane involvement during packet processing
+\end{itemize}
+
+\subsection*{Key Achievement}
+Successfully implemented and validated a 3-layer programmable firewall combining TCP stateful filtering with DNS Deep Packet Inspection based on cutting-edge research (NDSS 2022).
+
+\vspace{2em}
+
+\begin{center}
+\textbf{All tests passed successfully.}\\
+\textbf{Firewall operational and ready for demonstration.}
+\end{center}
+
+\end{document}
