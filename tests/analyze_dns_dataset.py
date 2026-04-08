@@ -160,7 +160,30 @@ Real dataset result:
     print(f"✓ Safe for submission\n")
 
 def main():
-    pcap_file = "C:/Windows/Temp/dns_sample.pcap"
+    # Try multiple paths (Windows and Linux)
+    possible_paths = [
+        "/tmp/dns_sample.pcap",                    # Linux
+        "C:/Windows/Temp/dns_sample.pcap",         # Windows
+        "./dns_sample.pcap",                       # Current directory
+        "../dns_sample.pcap",                      # Parent directory
+    ]
+
+    pcap_file = None
+    for path in possible_paths:
+        try:
+            import os
+            if os.path.exists(path):
+                pcap_file = path
+                break
+        except:
+            pass
+
+    if not pcap_file:
+        print("[!] ERROR: PCAP file not found in any location:")
+        for path in possible_paths:
+            print(f"  - {path}")
+        print("[!] Please download: https://wiki.wireshark.org/SampleCaptures")
+        return 1
 
     print("\n" + "=" * 80)
     print("DNS WATER-TORTURE ANALYSIS - P4 FIREWALL")
